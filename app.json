@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Meta Wearable Video App",
-    "slug": "meta-wearable-video-app",
+    "name": "Meta Wearable Recorder",
+    "slug": "meta-wearable-recorder",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.meta-wearable-video-app"
+      "bundleIdentifier": "app.rork.meta-wearable-recorder"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.meta_wearable_video_app"
+      "package": "app.rork.meta_wearable_recorder"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
