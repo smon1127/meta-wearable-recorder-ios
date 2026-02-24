@@ -42,12 +42,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Mic size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="index"
-        options={{
-          href: null,
-        }}
-      />
     </Tabs>
   );
 }
