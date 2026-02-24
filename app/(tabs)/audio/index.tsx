@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Animated, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Mic, Volume2, Sliders, RefreshCw } from 'lucide-react-native';
+import { Mic, Volume2, Sliders, RefreshCw, Wifi } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -9,9 +9,18 @@ import AudioInputItem from '@/components/AudioInputItem';
 
 export default function AudioScreen() {
   const insets = useSafeAreaInsets();
-  const { audioDevices, selectedAudioDeviceId, selectAudioDevice, connectedDevices } = useApp();
+  const {
+    audioDevices,
+    selectedAudioDeviceId,
+    selectAudioDevice,
+    connectedDevices,
+    isDetectingInputs,
+    refreshAudioInputs,
+    streamState,
+  } = useApp();
   const fadeIn = useRef(new Animated.Value(0)).current;
   const [gainLevel, setGainLevel] = useState<number>(75);
+  const refreshSpin = useRef(new Animated.Value(0)).current;
   const meterAnims = useRef(
     Array.from({ length: 8 }, () => new Animated.Value(0.2))
   ).current;
@@ -41,6 +50,18 @@ export default function AudioScreen() {
     return () => animations.forEach((a) => a.stop());
   }, [meterAnims]);
 
+  const handleRefresh = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.timing(refreshSpin, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start(() => {
+      refreshSpin.setValue(0);
+    });
+    refreshAudioInputs();
+  }, [refreshAudioInputs, refreshSpin]);
+
   const handleSelectDevice = useCallback((id: string) => {
     selectAudioDevice(id);
   }, [selectAudioDevice]);
@@ -60,6 +81,13 @@ export default function AudioScreen() {
     [audioDevices]
   );
 
+  const isStreaming = streamState === 'streaming';
+
+  const spinInterpolate = refreshSpin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView
@@ -71,17 +99,32 @@ export default function AudioScreen() {
           <View>
             <Text style={styles.title}>Audio Input</Text>
             <Text style={styles.subtitle}>
-              {connectedDevices.length} devices available
+              {isDetectingInputs ? 'Scanning...' : `${connectedDevices.length} devices available`}
             </Text>
           </View>
           <Pressable
             style={styles.refreshBtn}
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+            onPress={handleRefresh}
             testID="refresh-devices"
           >
-            <RefreshCw size={18} color={Colors.textSecondary} />
+            {isDetectingInputs ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+                <RefreshCw size={18} color={Colors.textSecondary} />
+              </Animated.View>
+            )}
           </Pressable>
         </Animated.View>
+
+        {isStreaming && (
+          <View style={styles.streamBanner}>
+            <Wifi size={14} color={Colors.success} />
+            <Text style={styles.streamBannerText}>
+              Streaming from Ray-Ban Meta — audio routed via Bluetooth HFP
+            </Text>
+          </View>
+        )}
 
         <View style={styles.meterCard}>
           <View style={styles.meterHeader}>
@@ -153,6 +196,12 @@ export default function AudioScreen() {
               onSelect={handleSelectDevice}
             />
           ))}
+          {connected.length === 0 && !isDetectingInputs && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No connected inputs detected</Text>
+              <Text style={styles.emptySubText}>Tap refresh to scan for devices</Text>
+            </View>
+          )}
         </View>
 
         {disconnected.length > 0 && (
@@ -216,6 +265,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.borderLight,
+  },
+  streamBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0, 230, 118, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  streamBannerText: {
+    color: Colors.success,
+    fontSize: 12,
+    fontWeight: '500' as const,
+    flex: 1,
   },
   meterCard: {
     backgroundColor: Colors.surface,
@@ -345,5 +411,19 @@ const styles = StyleSheet.create({
   },
   deviceList: {
     gap: 8,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 4,
+  },
+  emptyText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '500' as const,
+  },
+  emptySubText: {
+    color: Colors.textMuted,
+    fontSize: 12,
   },
 });

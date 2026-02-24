@@ -1,6 +1,6 @@
 import React, { useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
-import { Mic, Headphones, Glasses, Usb, Check, Radio } from 'lucide-react-native';
+import { Mic, Headphones, Glasses, Usb, Check, Radio, Speaker, MicOff } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import type { AudioDevice } from '@/mocks/devices';
@@ -13,8 +13,8 @@ interface AudioInputItemProps {
 
 const typeIcons: Record<string, React.ElementType> = {
   usb: Usb,
-  bluetooth: Radio,
-  'built-in': Glasses,
+  bluetooth: Headphones,
+  'built-in': Mic,
   wired: Mic,
 };
 
@@ -24,6 +24,15 @@ const typeLabels: Record<string, string> = {
   'built-in': 'Built-in',
   wired: 'Wired',
 };
+
+function getIconForDevice(device: AudioDevice): React.ElementType {
+  const lower = device.name.toLowerCase();
+  if (lower.includes('glasses') || lower.includes('ray-ban')) return Glasses;
+  if (lower.includes('airpod') || lower.includes('headphone') || lower.includes('beats')) return Headphones;
+  if (lower.includes('speaker')) return Speaker;
+  if (device.type === 'bluetooth') return Radio;
+  return typeIcons[device.type] || Mic;
+}
 
 function AudioInputItem({ device, isSelected, onSelect }: AudioInputItemProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -38,7 +47,7 @@ function AudioInputItem({ device, isSelected, onSelect }: AudioInputItemProps) {
     onSelect(device.id);
   }, [device.connected, device.id, onSelect, scaleAnim]);
 
-  const IconComponent = device.type === 'bluetooth' ? Headphones : typeIcons[device.type] || Mic;
+  const IconComponent = getIconForDevice(device);
 
   return (
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
@@ -59,17 +68,17 @@ function AudioInputItem({ device, isSelected, onSelect }: AudioInputItemProps) {
         </View>
 
         <View style={styles.info}>
-          <Text style={[styles.name, !device.connected && styles.disabledText]}>
+          <Text style={[styles.name, !device.connected && styles.disabledText]} numberOfLines={1}>
             {device.name}
           </Text>
           <View style={styles.detailsRow}>
             <View style={[styles.typeBadge, isSelected && styles.selectedTypeBadge]}>
               <Text style={[styles.typeText, isSelected && styles.selectedTypeText]}>
-                {typeLabels[device.type]}
+                {typeLabels[device.type] ?? device.type}
               </Text>
             </View>
             <Text style={styles.specs}>
-              {device.sampleRate / 1000}kHz · {device.channels}ch
+              {device.sampleRate >= 1000 ? `${device.sampleRate / 1000}kHz` : `${device.sampleRate}Hz`} · {device.channels}ch
             </Text>
           </View>
         </View>

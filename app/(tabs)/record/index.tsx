@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Video, StopCircle, Mic, Settings, ChevronDown } from 'lucide-react-native';
+import { Video, StopCircle, Mic, Settings, ChevronDown, Wifi, WifiOff, Activity, Zap } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
@@ -15,6 +15,22 @@ function formatTimer(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function formatBitrate(kbps: number): string {
+  if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
+  return `${kbps} kbps`;
+}
+
+const STREAM_STATE_LABELS: Record<string, { label: string; color: string }> = {
+  idle: { label: 'Disconnected', color: Colors.textMuted },
+  connecting: { label: 'Connecting...', color: Colors.warning },
+  waiting_for_device: { label: 'Waiting for glasses...', color: Colors.warning },
+  starting: { label: 'Starting stream...', color: Colors.warning },
+  streaming: { label: 'Live', color: Colors.success },
+  paused: { label: 'Paused', color: Colors.warning },
+  error: { label: 'Error', color: Colors.error },
+  stopped: { label: 'Stopped', color: Colors.textMuted },
+};
+
 export default function RecordScreen() {
   const insets = useSafeAreaInsets();
   const {
@@ -27,12 +43,22 @@ export default function RecordScreen() {
     updateRecordingSettings,
     pulseAnim,
     wearable,
+    streamState,
+    streamStatus,
+    startStream,
+    stopStream,
   } = useApp();
 
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const buttonScale = useRef(new Animated.Value(1)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
   const viewfinderAnim = useRef(new Animated.Value(0.3)).current;
+  const streamPulse = useRef(new Animated.Value(0.4)).current;
+  const connectBtnScale = useRef(new Animated.Value(1)).current;
+
+  const isStreaming = streamState === 'streaming';
+  const isConnecting = streamState === 'connecting' || streamState === 'waiting_for_device' || streamState === 'starting';
+  const streamInfo = STREAM_STATE_LABELS[streamState] ?? STREAM_STATE_LABELS.idle;
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -43,6 +69,20 @@ export default function RecordScreen() {
       ])
     ).start();
   }, [fadeIn, viewfinderAnim]);
+
+  useEffect(() => {
+    if (isStreaming) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(streamPulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
+          Animated.timing(streamPulse, { toValue: 0.4, duration: 1200, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      streamPulse.stopAnimation();
+      streamPulse.setValue(0.4);
+    }
+  }, [isStreaming, streamPulse]);
 
   const handleRecordPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -58,6 +98,20 @@ export default function RecordScreen() {
     }
   }, [isRecording, startRecording, stopRecording, buttonScale]);
 
+  const handleStreamToggle = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Animated.sequence([
+      Animated.timing(connectBtnScale, { toValue: 0.9, duration: 80, useNativeDriver: true }),
+      Animated.timing(connectBtnScale, { toValue: 1, duration: 80, useNativeDriver: true }),
+    ]).start();
+
+    if (isStreaming || isConnecting) {
+      await stopStream();
+    } else {
+      await startStream();
+    }
+  }, [isStreaming, isConnecting, startStream, stopStream, connectBtnScale]);
+
   const resolutions = ['720p', '1080p', '4K'] as const;
   const fpsOptions = [30, 60] as const;
 
@@ -65,26 +119,46 @@ export default function RecordScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Animated.View style={[styles.viewfinder, { opacity: fadeIn }]}>
         <LinearGradient
-          colors={['#0D1520', '#141E30', '#1A2640']}
+          colors={isStreaming ? ['#0A1A10', '#0D2818', '#112D1E'] : ['#0D1520', '#141E30', '#1A2640']}
           style={styles.viewfinderGradient}
         >
           <Animated.View style={[styles.scanLines, { opacity: viewfinderAnim }]}>
             {Array.from({ length: 12 }).map((_, i) => (
-              <View key={i} style={styles.scanLine} />
+              <View key={i} style={[styles.scanLine, isStreaming && styles.scanLineActive]} />
             ))}
           </Animated.View>
 
-          <View style={styles.cornerTL} />
-          <View style={styles.cornerTR} />
-          <View style={styles.cornerBL} />
-          <View style={styles.cornerBR} />
+          <View style={[styles.cornerTL, isStreaming && styles.cornerActive]} />
+          <View style={[styles.cornerTR, isStreaming && styles.cornerActive]} />
+          <View style={[styles.cornerBL, isStreaming && styles.cornerActive]} />
+          <View style={[styles.cornerBR, isStreaming && styles.cornerActive]} />
 
           <View style={styles.viewfinderCenter}>
             <Text style={styles.viewfinderLabel}>RAY-BAN META</Text>
-            <Text style={styles.viewfinderSubLabel}>
-              {wearable.connected ? 'Live Preview' : 'No Connection'}
+            <Text style={[styles.viewfinderSubLabel, { color: streamInfo.color }]}>
+              {streamInfo.label}
             </Text>
           </View>
+
+          {isStreaming && streamStatus && (
+            <View style={styles.streamOverlay}>
+              <Animated.View style={[styles.liveBadge, { opacity: streamPulse }]}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </Animated.View>
+              <View style={styles.streamStats}>
+                <View style={styles.streamStatItem}>
+                  <Activity size={10} color={Colors.success} />
+                  <Text style={styles.streamStatText}>{streamStatus.fps}fps</Text>
+                </View>
+                <View style={styles.streamStatItem}>
+                  <Zap size={10} color={Colors.primary} />
+                  <Text style={styles.streamStatText}>{streamStatus.latencyMs}ms</Text>
+                </View>
+                <Text style={styles.streamStatText}>{formatBitrate(streamStatus.bitrate)}</Text>
+              </View>
+            </View>
+          )}
 
           {isRecording && (
             <View style={styles.recIndicator}>
@@ -94,10 +168,39 @@ export default function RecordScreen() {
             </View>
           )}
 
-          <View style={styles.viewfinderInfo}>
-            <Text style={styles.viewfinderInfoText}>
-              {recordingSettings.resolution} · {recordingSettings.fps}fps
-            </Text>
+          <View style={styles.viewfinderBottom}>
+            <View style={styles.viewfinderInfo}>
+              <Text style={styles.viewfinderInfoText}>
+                {recordingSettings.resolution} · {recordingSettings.fps}fps
+              </Text>
+            </View>
+
+            <Animated.View style={{ transform: [{ scale: connectBtnScale }] }}>
+              <Pressable
+                style={[
+                  styles.streamToggle,
+                  isStreaming && styles.streamToggleActive,
+                  isConnecting && styles.streamToggleConnecting,
+                ]}
+                onPress={handleStreamToggle}
+                testID="stream-toggle"
+              >
+                {isStreaming ? (
+                  <Wifi size={16} color={Colors.success} />
+                ) : isConnecting ? (
+                  <Wifi size={16} color={Colors.warning} />
+                ) : (
+                  <WifiOff size={16} color={Colors.textMuted} />
+                )}
+                <Text style={[
+                  styles.streamToggleText,
+                  isStreaming && styles.streamToggleTextActive,
+                  isConnecting && styles.streamToggleTextConnecting,
+                ]}>
+                  {isStreaming ? 'Disconnect' : isConnecting ? 'Connecting' : 'Connect'}
+                </Text>
+              </Pressable>
+            </Animated.View>
           </View>
         </LinearGradient>
       </Animated.View>
@@ -112,7 +215,7 @@ export default function RecordScreen() {
         >
           <Mic size={14} color={Colors.primary} />
           <Text style={styles.audioSourceText} numberOfLines={1}>
-            {selectedAudioDevice.name}
+            {selectedAudioDevice?.name ?? 'No Input'}
           </Text>
           <ChevronDown size={14} color={Colors.textMuted} />
         </Pressable>
@@ -210,6 +313,26 @@ export default function RecordScreen() {
                 ))}
               </View>
             </View>
+
+            {isStreaming && streamStatus && (
+              <View style={styles.streamInfoPanel}>
+                <Text style={styles.streamInfoTitle}>Stream Info</Text>
+                <View style={styles.streamInfoRow}>
+                  <Text style={styles.streamInfoLabel}>Frames</Text>
+                  <Text style={styles.streamInfoValue}>{streamStatus.framesReceived.toLocaleString()}</Text>
+                </View>
+                <View style={styles.streamInfoRow}>
+                  <Text style={styles.streamInfoLabel}>Dropped</Text>
+                  <Text style={[styles.streamInfoValue, streamStatus.droppedFrames > 0 && { color: Colors.error }]}>
+                    {streamStatus.droppedFrames}
+                  </Text>
+                </View>
+                <View style={styles.streamInfoRow}>
+                  <Text style={styles.streamInfoLabel}>Uptime</Text>
+                  <Text style={styles.streamInfoValue}>{formatTimer(streamStatus.uptime)}</Text>
+                </View>
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -245,6 +368,9 @@ const styles = StyleSheet.create({
   scanLine: {
     height: 1,
     backgroundColor: 'rgba(0, 212, 255, 0.04)',
+  },
+  scanLineActive: {
+    backgroundColor: 'rgba(0, 230, 118, 0.06)',
   },
   cornerTL: {
     position: 'absolute',
@@ -290,6 +416,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     borderBottomRightRadius: 4,
   },
+  cornerActive: {
+    borderColor: Colors.success,
+  },
   viewfinderCenter: {
     alignItems: 'center',
     gap: 6,
@@ -303,6 +432,50 @@ const styles = StyleSheet.create({
   viewfinderSubLabel: {
     color: Colors.textMuted,
     fontSize: 12,
+  },
+  streamOverlay: {
+    position: 'absolute',
+    top: 16,
+    right: 20,
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0, 230, 118, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.success,
+  },
+  liveText: {
+    color: Colors.success,
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  streamStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  streamStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  streamStatText: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    fontVariant: ['tabular-nums'],
   },
   recIndicator: {
     position: 'absolute',
@@ -330,15 +503,50 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     fontVariant: ['tabular-nums'],
   },
-  viewfinderInfo: {
+  viewfinderBottom: {
     position: 'absolute',
-    bottom: 20,
-    right: 24,
+    bottom: 16,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
+  viewfinderInfo: {},
   viewfinderInfoText: {
     color: Colors.textMuted,
     fontSize: 12,
     fontWeight: '500' as const,
+  },
+  streamToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  streamToggleActive: {
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
+    borderColor: 'rgba(0, 230, 118, 0.3)',
+  },
+  streamToggleConnecting: {
+    backgroundColor: 'rgba(255, 214, 0, 0.1)',
+    borderColor: 'rgba(255, 214, 0, 0.3)',
+  },
+  streamToggleText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  streamToggleTextActive: {
+    color: Colors.success,
+  },
+  streamToggleTextConnecting: {
+    color: Colors.warning,
   },
   controlsSection: {
     padding: 20,
@@ -456,5 +664,33 @@ const styles = StyleSheet.create({
   },
   settingChipTextActive: {
     color: Colors.primary,
+  },
+  streamInfoPanel: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    paddingTop: 12,
+    gap: 8,
+  },
+  streamInfoTitle: {
+    color: Colors.success,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: 1,
+    textTransform: 'uppercase' as const,
+    marginBottom: 2,
+  },
+  streamInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  streamInfoLabel: {
+    color: Colors.textMuted,
+    fontSize: 13,
+  },
+  streamInfoValue: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600' as const,
+    fontVariant: ['tabular-nums'],
   },
 });
