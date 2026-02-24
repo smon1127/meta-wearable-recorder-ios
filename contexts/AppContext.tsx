@@ -122,8 +122,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
             setWearable((prev) => ({ ...prev, connected: false }));
           }
         });
-
-        await streamService.startDeviceDiscovery();
       }
     })();
   }, [streamService]);
@@ -392,9 +390,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const isStreaming = streamState === 'streaming';
   const isConnecting = streamState === 'connecting' || streamState === 'starting' || streamState === 'waiting_for_device';
-  const isWaitingForDevice = streamState === 'idle';
+  const isIdle = streamState === 'idle' || streamState === 'stopped';
+  const isWaitingForDevice = streamState === 'waiting_for_device';
   const isError = streamState === 'error';
-  const canStartStream = !isStreaming && !isConnecting;
+  const canStartStream = isIdle || isError;
 
   return {
     wearable,
@@ -427,6 +426,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     hasActiveDevice,
     isStreaming,
     isConnecting,
+    isIdle,
     isWaitingForDevice,
     isError,
     canStartStream,

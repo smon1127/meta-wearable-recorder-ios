@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, Glasses, ChevronRight, Wifi, WifiOff, Film } from 'lucide-react-native';
+import { ActivityIndicator } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -18,11 +19,15 @@ export default function DashboardScreen() {
     isRecording,
     isStreaming,
     isConnecting,
+    isIdle,
     isWaitingForDevice,
     hasActiveDevice,
     streamState,
     selectedAudioDevice,
     isError,
+    startStream,
+    stopStream,
+    canStartStream,
   } = useApp();
   const headerFade = useRef(new Animated.Value(0)).current;
   const quickActionSlide = useRef(new Animated.Value(40)).current;
@@ -45,7 +50,7 @@ export default function DashboardScreen() {
     ? 'Connecting...'
     : isError
     ? 'Failed'
-    : 'Disconnected';
+    : 'Not Connected';
 
   const connectionColor = isStreaming
     ? Colors.success
@@ -102,6 +107,39 @@ export default function DashboardScreen() {
               <Text style={styles.deviceStatValue} numberOfLines={1}>{selectedAudioDevice?.name ?? 'None'}</Text>
             </View>
           </View>
+
+          {canStartStream && (
+            <Pressable
+              style={styles.connectBtn}
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                await startStream();
+              }}
+              testID="dashboard-connect-btn"
+            >
+              <Wifi size={16} color={Colors.primary} />
+              <Text style={styles.connectBtnText}>Connect & Stream</Text>
+            </Pressable>
+          )}
+          {isStreaming && (
+            <Pressable
+              style={styles.disconnectBtn}
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                await stopStream();
+              }}
+              testID="dashboard-disconnect-btn"
+            >
+              <WifiOff size={16} color={Colors.error} />
+              <Text style={styles.disconnectBtnText}>Disconnect</Text>
+            </Pressable>
+          )}
+          {isConnecting && (
+            <View style={styles.connectingRow}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.connectingRowText}>Connecting...</Text>
+            </View>
+          )}
         </Animated.View>
 
         <Animated.View style={[styles.quickActions, { opacity: headerFade, transform: [{ translateY: quickActionSlide }] }]}>
@@ -392,5 +430,49 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 14,
     fontWeight: '600' as const,
+  },
+  connectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryGlow,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.3)',
+  },
+  connectBtnText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  disconnectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 82, 82, 0.1)',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 82, 82, 0.3)',
+  },
+  disconnectBtnText: {
+    color: Colors.error,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  connectingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  connectingRowText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '500' as const,
   },
 });

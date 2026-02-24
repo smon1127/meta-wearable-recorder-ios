@@ -258,20 +258,18 @@ class MetaStreamSession {
   private async startFallback(): Promise<void> {
     this.setState('connecting');
 
-    await this.simulateDelay(1500);
+    await this.simulateDelay(800);
     if (this.cancelled) return;
 
-    this.setState('waiting_for_device');
-
-    await this.simulateDelay(4000);
+    this.setState('starting');
+    await this.simulateDelay(600);
     if (this.cancelled) return;
 
-    console.log('[MetaStream] No Ray-Ban Meta glasses found after scanning');
-    this.emitError({
-      code: 'DEVICE_NOT_FOUND',
-      message: 'No Ray-Ban Meta glasses found. Make sure your glasses are powered on and nearby.',
-    });
-    this.setState('error');
+    console.log('[MetaStream] Starting fallback stream with phone camera');
+    this.startTime = Date.now();
+    this.setState('streaming');
+    this.startFrameEmission();
+    this.startStatusReporting();
   }
 
   async stop(): Promise<void> {

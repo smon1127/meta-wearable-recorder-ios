@@ -39,6 +39,7 @@ export default function RecordScreen() {
     hasActiveDevice,
     isStreaming,
     isConnecting,
+    isIdle,
     isWaitingForDevice,
     canStartStream,
     isError,
@@ -128,8 +129,8 @@ export default function RecordScreen() {
   const resolutions = ['720p', '1080p', '4K'] as const;
   const fpsOptions = [30, 60] as const;
 
-  const showCamera = !isStreaming && permission?.granted && Platform.OS !== 'web';
-  const showIdleState = !isStreaming && !isConnecting;
+  const showCamera = permission?.granted && Platform.OS !== 'web';
+  const showIdleState = isIdle && !isConnecting;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -154,17 +155,7 @@ export default function RecordScreen() {
                 <RefreshCw size={20} color={Colors.white} />
               </Pressable>
 
-              {showIdleState && !hasActiveDevice && (
-                <View style={styles.waitingOverlay}>
-                  <Animated.View style={[styles.waitingContent, { opacity: waitingPulse }]}>
-                    <Glasses size={32} color={Colors.warning} />
-                    <Text style={styles.waitingTitle}>Waiting for Device</Text>
-                    <Text style={styles.waitingSub}>Searching for Ray-Ban Meta...</Text>
-                  </Animated.View>
-                </View>
-              )}
-
-              {showIdleState && hasActiveDevice && (
+              {showIdleState && (
                 <View style={styles.readyOverlay}>
                   <Animated.View style={{ transform: [{ scale: connectBtnScale }] }}>
                     <Pressable
@@ -173,10 +164,12 @@ export default function RecordScreen() {
                       testID="start-stream-btn"
                     >
                       <Glasses size={24} color={Colors.white} />
-                      <Text style={styles.startStreamText}>Start Streaming</Text>
+                      <Text style={styles.startStreamText}>{hasActiveDevice ? 'Start Streaming' : 'Connect & Stream'}</Text>
                     </Pressable>
                   </Animated.View>
-                  <Text style={styles.readyHint}>Ray-Ban Meta detected</Text>
+                  <Text style={styles.readyHint}>
+                    {hasActiveDevice ? 'Ray-Ban Meta detected' : 'Tap to connect glasses or use phone camera'}
+                  </Text>
                 </View>
               )}
 
@@ -184,8 +177,19 @@ export default function RecordScreen() {
                 <View style={styles.connectingOverlay}>
                   <ActivityIndicator size="large" color={Colors.primary} />
                   <Text style={styles.connectingText}>
-                    {streamState === 'connecting' ? 'Connecting...' : 'Starting stream...'}
+                    {streamState === 'waiting_for_device' ? 'Searching for glasses...' : streamState === 'connecting' ? 'Connecting...' : 'Starting stream...'}
                   </Text>
+                </View>
+              )}
+
+              {isError && (
+                <View style={styles.errorOverlay}>
+                  <WifiOff size={32} color={Colors.error} />
+                  <Text style={styles.errorTitle}>Connection Failed</Text>
+                  <Text style={styles.errorSub}>Could not connect. Tap to retry.</Text>
+                  <Pressable style={styles.retryBtn} onPress={handleStreamToggle} testID="retry-stream">
+                    <Text style={styles.retryBtnText}>Retry</Text>
+                  </Pressable>
                 </View>
               )}
 
@@ -290,34 +294,41 @@ export default function RecordScreen() {
             <View style={styles.cornerBL} />
             <View style={styles.cornerBR} />
 
-            {!hasActiveDevice ? (
-              <View style={styles.waitingOverlay}>
-                <Animated.View style={[styles.waitingContent, { opacity: waitingPulse }]}>
-                  <Glasses size={32} color={Colors.warning} />
-                  <Text style={styles.waitingTitle}>Waiting for Device</Text>
-                  <Text style={styles.waitingSub}>Searching for Ray-Ban Meta...</Text>
-                </Animated.View>
-              </View>
-            ) : isConnecting ? (
-              <View style={styles.connectingOverlay}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.connectingText}>
-                  {streamState === 'connecting' ? 'Connecting...' : 'Starting stream...'}
-                </Text>
-              </View>
-            ) : (
+            {isIdle && (
               <View style={styles.readyOverlay}>
                 <Animated.View style={{ transform: [{ scale: connectBtnScale }] }}>
                   <Pressable
                     style={styles.startStreamBtn}
                     onPress={handleStreamToggle}
-                    testID="start-stream-btn"
+                    testID="start-stream-btn-web"
                   >
                     <Glasses size={24} color={Colors.white} />
-                    <Text style={styles.startStreamText}>Start Streaming</Text>
+                    <Text style={styles.startStreamText}>{hasActiveDevice ? 'Start Streaming' : 'Connect & Stream'}</Text>
                   </Pressable>
                 </Animated.View>
-                <Text style={styles.readyHint}>Ray-Ban Meta detected</Text>
+                <Text style={styles.readyHint}>
+                  {hasActiveDevice ? 'Ray-Ban Meta detected' : 'Tap to connect glasses or use phone camera'}
+                </Text>
+              </View>
+            )}
+
+            {isConnecting && (
+              <View style={styles.connectingOverlay}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.connectingText}>
+                  {streamState === 'waiting_for_device' ? 'Searching for glasses...' : streamState === 'connecting' ? 'Connecting...' : 'Starting stream...'}
+                </Text>
+              </View>
+            )}
+
+            {isError && (
+              <View style={styles.errorOverlay}>
+                <WifiOff size={32} color={Colors.error} />
+                <Text style={styles.errorTitle}>Connection Failed</Text>
+                <Text style={styles.errorSub}>Could not connect. Tap to retry.</Text>
+                <Pressable style={styles.retryBtn} onPress={handleStreamToggle} testID="retry-stream-web">
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </Pressable>
               </View>
             )}
 
