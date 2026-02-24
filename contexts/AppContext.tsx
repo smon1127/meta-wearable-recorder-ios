@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Animated, AppState, Platform } from 'react-native';
+import { Animated, AppState, Platform, Linking } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -58,9 +58,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [streamStatus, setStreamStatus] = useState<StreamSessionStatus | null>(null);
   const [streamRegistration, setStreamRegistration] = useState<RegistrationState>({ status: 'unregistered' });
   const [hasActiveDevice, setHasActiveDevice] = useState<boolean>(false);
+  const [isNativeSDK, setIsNativeSDK] = useState<boolean>(false);
   const streamSessionRef = useRef<MetaStreamSession | null>(null);
   const streamService = useRef(MetaStreamService.getInstance()).current;
-  const deviceCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const initDone = useRef(false);
 
   const persistedQuery = useQuery({
     queryKey: ['persisted-state'],
@@ -90,10 +91,69 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   useEffect(() => {
-    console.log('[AppContext] Initialized — waiting for real device connection');
+    if (initDone.current) return;
+    initDone.current = true;
+
+    console.log('[AppContext] Initializing MetaStreamService...');
     setStreamState('idle');
     setHasActiveDevice(false);
-  }, []);
+
+    (async () => {
+      await streamService.initialize();
+      const sdkAvailable = streamService.isNativeSDKAvailable();
+      setIsNativeSDK(sdkAvailable);
+      console.log('[AppContext] Native SDK available:', sdkAvailable);
+
+      if (sdkAvailable) {
+        const reg = streamService.getRegistration();
+        setStreamRegistration(reg);
+        console.log('[AppContext] Initial registration:', reg.status);
+
+        streamService.onDeviceChange((event) => {
+          console.log('[AppContext] Device change from native:', event);
+          setHasActiveDevice(event.connected);
+          if (event.connected && event.name) {
+            setWearable((prev) => ({
+              ...prev,
+              name: event.name || prev.name,
+              connected: true,
+            }));
+          } else {
+            setWearable((prev) => ({ ...prev, connected: false }));
+          }
+        });
+
+        await streamService.startDeviceDiscovery();
+      }
+    })();
+  }, [streamService]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const handleUrl = async (event: { url: string }) => {
+      console.log('[AppContext] Received URL callback:', event.url);
+      const handled = await streamService.handleUrl(event.url);
+      if (handled) {
+        console.log('[AppContext] URL handled by Meta Wearables SDK');
+        const reg = streamService.getRegistration();
+        setStreamRegistration(reg);
+      }
+    };
+
+    const sub = Linking.addEventListener('url', handleUrl);
+
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('[AppContext] Initial URL:', url);
+        handleUrl({ url });
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [streamService]);
 
   const refreshAudioInputs = useCallback(async () => {
     console.log('[AppContext] Refreshing audio inputs...');
@@ -188,6 +248,31 @@ export const [AppProvider, useApp] = createContextHook(() => {
     console.log('[AppContext] Starting stream...');
     setStreamState('connecting');
 
+    if (isNativeSDK && streamRegistration.status !== 'registered') {
+      console.log('[AppContext] Need to register first...');
+      try {
+        const reg = await streamService.register();
+        setStreamRegistration(reg);
+        if (reg.status !== 'registered' && reg.status !== 'registering') {
+          console.error('[AppContext] Registration failed:', reg.error);
+          setStreamState('error');
+          return;
+        }
+      } catch (err) {
+        console.error('[AppContext] Registration error:', err);
+        setStreamState('error');
+        return;
+      }
+    }
+
+    if (isNativeSDK) {
+      const hasCamPermission = await streamService.checkPermission('camera');
+      if (!hasCamPermission) {
+        console.log('[AppContext] Requesting camera permission...');
+        await streamService.requestPermission('camera');
+      }
+    }
+
     const resMap: Record<string, 'low' | 'medium' | 'high'> = {
       '720p': 'medium',
       '1080p': 'high',
@@ -208,6 +293,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       setStreamState(state as AppStreamState);
       if (state === 'streaming') {
         setWearable(prev => ({ ...prev, connected: true }));
+        setHasActiveDevice(true);
       } else if (state === 'stopped' || state === 'error') {
         setWearable(prev => ({ ...prev, connected: false }));
       }
@@ -223,7 +309,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     });
 
     await session.start();
-  }, [recordingSettings, streamService]);
+  }, [recordingSettings, streamService, isNativeSDK, streamRegistration.status]);
 
   const stopStream = useCallback(async () => {
     console.log('[AppContext] Stopping stream...');
@@ -236,6 +322,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setHasActiveDevice(false);
     setWearable(prev => ({ ...prev, connected: false }));
   }, []);
+
+  const capturePhoto = useCallback(async (format: 'jpeg' | 'heic' = 'jpeg') => {
+    console.log('[AppContext] Capturing photo...');
+    return streamService.capturePhoto(format);
+  }, [streamService]);
 
   const startRecording = useCallback(() => {
     console.log('[Recording] Starting recording...');
@@ -332,11 +423,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
     isRegistering: registerStream.isPending,
     startStream,
     stopStream,
+    capturePhoto,
     hasActiveDevice,
     isStreaming,
     isConnecting,
     isWaitingForDevice,
     isError,
     canStartStream,
+    isNativeSDK,
   };
 });
