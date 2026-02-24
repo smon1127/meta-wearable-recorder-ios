@@ -16,7 +16,7 @@ export default function AudioScreen() {
     connectedDevices,
     isDetectingInputs,
     refreshAudioInputs,
-    streamState,
+    isStreaming,
   } = useApp();
   const fadeIn = useRef(new Animated.Value(0)).current;
   const [gainLevel, setGainLevel] = useState<number>(75);
@@ -80,8 +80,6 @@ export default function AudioScreen() {
     () => audioDevices.filter((d) => !d.connected),
     [audioDevices]
   );
-
-  const isStreaming = streamState === 'streaming';
 
   const spinInterpolate = refreshSpin.interpolate({
     inputRange: [0, 1],

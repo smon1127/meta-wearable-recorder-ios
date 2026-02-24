@@ -1,14 +1,16 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { Glasses, Battery, HardDrive, Wifi } from 'lucide-react-native';
+import { Glasses, Wifi, WifiOff } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import type { WearableDevice } from '@/mocks/devices';
 
 interface DeviceStatusCardProps {
   device: WearableDevice;
+  connectionLabel: string;
+  connectionColor: string;
 }
 
-function DeviceStatusCard({ device }: DeviceStatusCardProps) {
+function DeviceStatusCard({ device, connectionLabel, connectionColor }: DeviceStatusCardProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
@@ -27,14 +29,6 @@ function DeviceStatusCard({ device }: DeviceStatusCardProps) {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
-  const batteryColor = device.batteryLevel > 50
-    ? Colors.success
-    : device.batteryLevel > 20
-    ? Colors.warning
-    : Colors.error;
-
-  const storagePercent = (device.storageUsed / device.storageTotal) * 100;
-
   return (
     <Animated.View
       style={[
@@ -52,48 +46,15 @@ function DeviceStatusCard({ device }: DeviceStatusCardProps) {
             <Text style={styles.deviceModel}>{device.model}</Text>
           </View>
         </View>
-        <View style={[styles.statusBadge, device.connected ? styles.connected : styles.disconnected]}>
-          <View style={[styles.statusDot, { backgroundColor: device.connected ? Colors.success : Colors.error }]} />
-          <Text style={[styles.statusText, { color: device.connected ? Colors.success : Colors.error }]}>
-            {device.connected ? 'Connected' : 'Offline'}
+        <View style={[styles.statusBadge, { borderColor: connectionColor, backgroundColor: `${connectionColor}15` }]}>
+          {device.connected ? (
+            <Wifi size={12} color={connectionColor} />
+          ) : (
+            <WifiOff size={12} color={connectionColor} />
+          )}
+          <Text style={[styles.statusText, { color: connectionColor }]}>
+            {connectionLabel}
           </Text>
-        </View>
-      </View>
-
-      <View style={styles.statsRow}>
-        <View style={styles.stat}>
-          <View style={styles.statHeader}>
-            <Battery size={14} color={batteryColor} />
-            <Text style={styles.statLabel}>Battery</Text>
-          </View>
-          <Text style={[styles.statValue, { color: batteryColor }]}>{device.batteryLevel}%</Text>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${device.batteryLevel}%`, backgroundColor: batteryColor }]} />
-          </View>
-        </View>
-
-        <View style={styles.statDivider} />
-
-        <View style={styles.stat}>
-          <View style={styles.statHeader}>
-            <HardDrive size={14} color={Colors.primary} />
-            <Text style={styles.statLabel}>Storage</Text>
-          </View>
-          <Text style={styles.statValue}>{device.storageUsed}/{device.storageTotal} GB</Text>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${storagePercent}%`, backgroundColor: Colors.primary }]} />
-          </View>
-        </View>
-
-        <View style={styles.statDivider} />
-
-        <View style={styles.stat}>
-          <View style={styles.statHeader}>
-            <Wifi size={14} color={Colors.textSecondary} />
-            <Text style={styles.statLabel}>Synced</Text>
-          </View>
-          <Text style={styles.statValue}>{device.lastSyncTime}</Text>
-          <Text style={styles.fwVersion}>v{device.firmwareVersion}</Text>
         </View>
       </View>
     </Animated.View>
@@ -114,7 +75,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
   },
   deviceInfo: {
     flexDirection: 'row',
@@ -146,65 +106,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 20,
     gap: 5,
-  },
-  connected: {
-    backgroundColor: 'rgba(0, 230, 118, 0.1)',
-  },
-  disconnected: {
-    backgroundColor: 'rgba(255, 82, 82, 0.1)',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    borderWidth: 1,
   },
   statusText: {
     fontSize: 12,
     fontWeight: '600' as const,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  stat: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 50,
-    backgroundColor: Colors.border,
-    alignSelf: 'center',
-  },
-  statHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statLabel: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    fontWeight: '500' as const,
-  },
-  statValue: {
-    color: Colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  progressBar: {
-    width: '80%',
-    height: 3,
-    backgroundColor: Colors.surfaceHighlight,
-    borderRadius: 2,
-    marginTop: 2,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  fwVersion: {
-    color: Colors.textMuted,
-    fontSize: 10,
   },
 });

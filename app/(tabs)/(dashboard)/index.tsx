@@ -1,18 +1,28 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Video, Zap, ChevronRight } from 'lucide-react-native';
+import { Video, Glasses, ChevronRight, Wifi, WifiOff, Film } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import DeviceStatusCard from '@/components/DeviceStatusCard';
 import RecordingCard from '@/components/RecordingCard';
+import { useRouter } from 'expo-router';
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { wearable, recordings, isRecording, selectedAudioDevice } = useApp();
+  const {
+    wearable,
+    raybanRecordings,
+    recordings,
+    isRecording,
+    isStreaming,
+    isConnecting,
+    isWaitingForDevice,
+    hasActiveDevice,
+    streamState,
+    selectedAudioDevice,
+  } = useApp();
   const headerFade = useRef(new Animated.Value(0)).current;
   const quickActionSlide = useRef(new Animated.Value(40)).current;
 
@@ -23,12 +33,28 @@ export default function DashboardScreen() {
     ]).start();
   }, [headerFade, quickActionSlide]);
 
-  const handleQuickRecord = () => {
+  const handleQuickRecord = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push('/record' as never);
-  };
+  }, [router]);
 
-  const recentRecordings = recordings.slice(0, 6);
+  const connectionLabel = isStreaming
+    ? 'Streaming'
+    : isConnecting
+    ? 'Connecting...'
+    : isWaitingForDevice && !hasActiveDevice
+    ? 'Searching...'
+    : hasActiveDevice
+    ? 'Device Found'
+    : 'Disconnected';
+
+  const connectionColor = isStreaming
+    ? Colors.success
+    : isConnecting
+    ? Colors.warning
+    : hasActiveDevice
+    ? Colors.primary
+    : Colors.textMuted;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -39,17 +65,45 @@ export default function DashboardScreen() {
       >
         <Animated.View style={[styles.headerSection, { opacity: headerFade }]}>
           <View>
-            <Text style={styles.greeting}>Meta Wearable</Text>
+            <Text style={styles.greeting}>Ray-Ban Meta</Text>
             <Text style={styles.subtitle}>
-              {isRecording ? '● Recording in progress' : `${recordings.length} recordings · ${selectedAudioDevice.name}`}
+              {isRecording ? '● Recording in progress' : `${raybanRecordings.length} glasses recordings`}
             </Text>
           </View>
-          <View style={styles.liveDot}>
-            <View style={[styles.dot, { backgroundColor: wearable.connected ? Colors.success : Colors.error }]} />
+          <View style={[styles.statusChip, { borderColor: connectionColor }]}>
+            {isStreaming || (hasActiveDevice && !isWaitingForDevice) ? (
+              <Wifi size={12} color={connectionColor} />
+            ) : (
+              <WifiOff size={12} color={connectionColor} />
+            )}
+            <Text style={[styles.statusChipText, { color: connectionColor }]}>{connectionLabel}</Text>
           </View>
         </Animated.View>
 
-        <DeviceStatusCard device={wearable} />
+        <Animated.View style={[styles.deviceCard, { opacity: headerFade, transform: [{ translateY: quickActionSlide }] }]}>
+          <View style={styles.deviceCardHeader}>
+            <View style={styles.deviceIconWrap}>
+              <Glasses size={22} color={Colors.primary} />
+            </View>
+            <View style={styles.deviceCardInfo}>
+              <Text style={styles.deviceCardName}>{wearable.name}</Text>
+              <Text style={styles.deviceCardModel}>{wearable.model}</Text>
+            </View>
+            <View style={[styles.connDot, { backgroundColor: wearable.connected ? Colors.success : Colors.textMuted }]} />
+          </View>
+
+          <View style={styles.deviceCardStats}>
+            <View style={styles.deviceStat}>
+              <Text style={styles.deviceStatLabel}>Status</Text>
+              <Text style={[styles.deviceStatValue, { color: connectionColor }]}>{connectionLabel}</Text>
+            </View>
+            <View style={styles.deviceStatDivider} />
+            <View style={styles.deviceStat}>
+              <Text style={styles.deviceStatLabel}>Audio</Text>
+              <Text style={styles.deviceStatValue} numberOfLines={1}>{selectedAudioDevice?.name ?? 'None'}</Text>
+            </View>
+          </View>
+        </Animated.View>
 
         <Animated.View style={[styles.quickActions, { opacity: headerFade, transform: [{ translateY: quickActionSlide }] }]}>
           <Pressable
@@ -63,54 +117,70 @@ export default function DashboardScreen() {
               </View>
               <View style={styles.primaryActionText}>
                 <Text style={styles.primaryActionTitle}>
-                  {isRecording ? 'Recording...' : 'Start Recording'}
+                  {isRecording ? 'Recording...' : isStreaming ? 'Live View' : 'Open Camera'}
                 </Text>
                 <Text style={styles.primaryActionSub}>
-                  {selectedAudioDevice.name} · 1080p
+                  {isStreaming ? 'Glasses stream active' : 'Phone camera fallback'}
                 </Text>
               </View>
               <ChevronRight size={20} color={Colors.textSecondary} />
             </View>
           </Pressable>
-
-          <Pressable
-            style={styles.secondaryAction}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/audio' as never);
-            }}
-            testID="quick-audio-btn"
-          >
-            <Zap size={18} color={Colors.primary} />
-            <Text style={styles.secondaryActionText}>Audio Input</Text>
-          </Pressable>
         </Animated.View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent</Text>
-          <Text style={styles.sectionCount}>{recordings.length} total</Text>
-        </View>
+        {raybanRecordings.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Glasses size={16} color={Colors.primary} />
+                <Text style={styles.sectionTitle}>Glasses Recordings</Text>
+              </View>
+              <Text style={styles.sectionCount}>{raybanRecordings.length}</Text>
+            </View>
 
-        <FlatList
-          data={recentRecordings.slice(0, 4)}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <RecordingCard recording={item} compact />}
-          style={styles.horizontalList}
-          contentContainerStyle={styles.horizontalListContent}
-          scrollEnabled={true}
-        />
+            <FlatList
+              data={raybanRecordings.slice(0, 6)}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <RecordingCard recording={item} compact />}
+              style={styles.horizontalList}
+              contentContainerStyle={styles.horizontalListContent}
+              scrollEnabled={true}
+            />
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>All Recordings</Text>
-        </View>
+            {raybanRecordings.length > 4 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>All Glasses Recordings</Text>
+                </View>
+                {raybanRecordings.slice(0, 10).map((recording) => (
+                  <View key={recording.id} style={styles.recordingItem}>
+                    <RecordingCard recording={recording} />
+                  </View>
+                ))}
+              </>
+            )}
+          </>
+        )}
 
-        {recentRecordings.map((recording) => (
-          <View key={recording.id} style={styles.recordingItem}>
-            <RecordingCard recording={recording} />
+        {raybanRecordings.length === 0 && (
+          <View style={styles.emptyState}>
+            <Glasses size={48} color={Colors.textMuted} />
+            <Text style={styles.emptyTitle}>No Glasses Recordings</Text>
+            <Text style={styles.emptySub}>
+              Connect your Ray-Ban Meta and start streaming to capture recordings from your glasses.
+            </Text>
+            <Pressable
+              style={styles.emptyAction}
+              onPress={handleQuickRecord}
+              testID="empty-go-record"
+            >
+              <Film size={16} color={Colors.primary} />
+              <Text style={styles.emptyActionText}>Go to Camera</Text>
+            </Pressable>
           </View>
-        ))}
+        )}
 
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -147,25 +217,86 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 3,
   },
-  liveDot: {
-    width: 36,
-    height: 36,
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  statusChipText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  deviceCard: {
+    backgroundColor: Colors.surface,
     borderRadius: 18,
-    backgroundColor: Colors.surfaceLight,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    gap: 14,
+  },
+  deviceCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deviceIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryGlow,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dot: {
+  deviceCardInfo: {
+    flex: 1,
+  },
+  deviceCardName: {
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '700' as const,
+  },
+  deviceCardModel: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginTop: 1,
+  },
+  connDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
-  quickActions: {
+  deviceCardStats: {
     flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deviceStat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  deviceStatDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: Colors.border,
+  },
+  deviceStatLabel: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500' as const,
+  },
+  deviceStatValue: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  quickActions: {
     gap: 10,
   },
   primaryAction: {
-    flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: 16,
     borderWidth: 1,
@@ -199,27 +330,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  secondaryAction: {
-    width: 72,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    padding: 12,
-  },
-  secondaryActionText: {
-    color: Colors.textSecondary,
-    fontSize: 10,
-    fontWeight: '600' as const,
-  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 8,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   sectionTitle: {
     color: Colors.textPrimary,
@@ -238,5 +358,40 @@ const styles = StyleSheet.create({
   },
   recordingItem: {
     marginBottom: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    gap: 12,
+  },
+  emptyTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700' as const,
+    marginTop: 4,
+  },
+  emptySub: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 20,
+  },
+  emptyAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryGlow,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  emptyActionText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600' as const,
   },
 });

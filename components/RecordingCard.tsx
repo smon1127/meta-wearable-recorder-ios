@@ -1,7 +1,7 @@
 import React, { useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { Image } from 'expo-image';
-import { Clock, Film, Mic } from 'lucide-react-native';
+import { Clock, Film, Mic, Glasses } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import type { Recording } from '@/mocks/recordings';
 
@@ -25,6 +25,7 @@ function timeAgo(timestamp: string): string {
   const now = new Date();
   const date = new Date(timestamp);
   const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (diff < 60) return 'Just now';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
@@ -48,6 +49,8 @@ function RecordingCard({ recording, compact = false }: RecordingCardProps) {
     }).start();
   }, [scaleAnim]);
 
+  const isGlasses = recording.deviceType === 'rayban-meta';
+
   if (compact) {
     return (
       <Animated.View style={[{ transform: [{ scale: scaleAnim }] }]}>
@@ -65,6 +68,11 @@ function RecordingCard({ recording, compact = false }: RecordingCardProps) {
           <View style={styles.compactOverlay}>
             <Text style={styles.compactDuration}>{formatDuration(recording.duration)}</Text>
           </View>
+          {isGlasses && (
+            <View style={styles.compactGlassesBadge}>
+              <Glasses size={10} color={Colors.primary} />
+            </View>
+          )}
           <Text style={styles.compactTitle} numberOfLines={1}>{recording.title}</Text>
           <Text style={styles.compactMeta}>{recording.resolution} · {recording.fps}fps</Text>
         </Pressable>
@@ -88,6 +96,12 @@ function RecordingCard({ recording, compact = false }: RecordingCardProps) {
         <View style={styles.durationBadge}>
           <Text style={styles.durationText}>{formatDuration(recording.duration)}</Text>
         </View>
+        {isGlasses && (
+          <View style={styles.glassesBadge}>
+            <Glasses size={12} color={Colors.primary} />
+            <Text style={styles.glassesBadgeText}>RB Meta</Text>
+          </View>
+        )}
         <View style={styles.cardBody}>
           <Text style={styles.title} numberOfLines={1}>{recording.title}</Text>
           <View style={styles.metaRow}>
@@ -140,6 +154,25 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  glassesBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 212, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.3)',
+  },
+  glassesBadgeText: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
   cardBody: {
     padding: 14,
@@ -195,6 +228,17 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 10,
     fontWeight: '600' as const,
+  },
+  compactGlassesBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0, 212, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   compactTitle: {
     color: Colors.textPrimary,

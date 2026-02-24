@@ -12,24 +12,14 @@ export interface WearableDevice {
   id: string;
   name: string;
   model: string;
-  batteryLevel: number;
-  firmwareVersion: string;
   connected: boolean;
-  lastSyncTime: string;
-  storageUsed: number;
-  storageTotal: number;
 }
 
-export const mockWearable: WearableDevice = {
+export const defaultWearable: WearableDevice = {
   id: 'rb-meta-001',
   name: 'Ray-Ban Meta',
   model: 'Wayfarer Large',
-  batteryLevel: 72,
-  firmwareVersion: '2.4.1',
-  connected: true,
-  lastSyncTime: '2 min ago',
-  storageUsed: 18.4,
-  storageTotal: 32,
+  connected: false,
 };
 
 export const fallbackAudioDevices: AudioDevice[] = [
@@ -60,33 +50,4 @@ export const fallbackAudioDevices: AudioDevice[] = [
     channels: 1,
     icon: 'Mic',
   },
-  {
-    id: 'rb-meta-builtin',
-    name: 'Ray-Ban Meta Built-in',
-    type: 'built-in',
-    connected: true,
-    sampleRate: 44100,
-    channels: 2,
-    icon: 'Glasses',
-  },
-  {
-    id: 'bt-airpods-01',
-    name: 'AirPods Pro',
-    type: 'bluetooth',
-    connected: false,
-    sampleRate: 44100,
-    channels: 1,
-    icon: 'Headphones',
-  },
-  {
-    id: 'usb-ext-01',
-    name: 'USB Microphone',
-    type: 'usb',
-    connected: false,
-    sampleRate: 48000,
-    channels: 2,
-    icon: 'Usb',
-  },
 ];
-
-export const mockAudioDevices = fallbackAudioDevices;

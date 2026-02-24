@@ -3,8 +3,8 @@ import { Animated } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { mockWearable, fallbackAudioDevices, type AudioDevice, type WearableDevice } from '@/mocks/devices';
-import { mockRecordings, type Recording } from '@/mocks/recordings';
+import { defaultWearable, fallbackAudioDevices, type AudioDevice, type WearableDevice } from '@/mocks/devices';
+import type { Recording } from '@/mocks/recordings';
 import { detectAudioInputs } from '@/services/AudioInputService';
 import MetaStreamService, {
   type StreamState,
@@ -14,6 +14,16 @@ import MetaStreamService, {
   type RegistrationState,
 } from '@/services/MetaStreamService';
 
+export type AppStreamState =
+  | 'idle'
+  | 'waiting_for_device'
+  | 'connecting'
+  | 'starting'
+  | 'streaming'
+  | 'paused'
+  | 'error'
+  | 'stopped';
+
 export interface RecordingSettings {
   resolution: '720p' | '1080p' | '4K';
   fps: 30 | 60;
@@ -22,6 +32,7 @@ export interface RecordingSettings {
 interface PersistedState {
   selectedAudioDeviceId: string;
   recordingSettings: RecordingSettings;
+  recordings: Recording[];
 }
 
 const STORAGE_KEY = 'meta-wearable-state';
@@ -32,10 +43,10 @@ const defaultSettings: RecordingSettings = {
 };
 
 export const [AppProvider, useApp] = createContextHook(() => {
-  const [wearable, setWearable] = useState<WearableDevice>(mockWearable);
+  const [wearable, setWearable] = useState<WearableDevice>(defaultWearable);
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>(fallbackAudioDevices);
   const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState<string>('builtin-mic-bottom');
-  const [recordings, setRecordings] = useState<Recording[]>(mockRecordings);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingTimer, setRecordingTimer] = useState<number>(0);
   const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(defaultSettings);
@@ -43,11 +54,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const [streamState, setStreamState] = useState<StreamState>('idle');
+  const [streamState, setStreamState] = useState<AppStreamState>('idle');
   const [streamStatus, setStreamStatus] = useState<StreamSessionStatus | null>(null);
   const [streamRegistration, setStreamRegistration] = useState<RegistrationState>({ status: 'unregistered' });
+  const [hasActiveDevice, setHasActiveDevice] = useState<boolean>(false);
   const streamSessionRef = useRef<MetaStreamSession | null>(null);
   const streamService = useRef(MetaStreamService.getInstance()).current;
+  const deviceCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const persistedQuery = useQuery({
     queryKey: ['persisted-state'],
@@ -61,15 +74,36 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (persistedQuery.data) {
       setSelectedAudioDeviceId(persistedQuery.data.selectedAudioDeviceId);
       setRecordingSettings(persistedQuery.data.recordingSettings);
+      if (persistedQuery.data.recordings) {
+        setRecordings(persistedQuery.data.recordings);
+      }
     }
   }, [persistedQuery.data]);
 
-  const persist = useCallback(async (deviceId: string, settings: RecordingSettings) => {
+  const persist = useCallback(async (deviceId: string, settings: RecordingSettings, recs?: Recording[]) => {
     const state: PersistedState = {
       selectedAudioDeviceId: deviceId,
       recordingSettings: settings,
+      recordings: recs ?? [],
     };
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, []);
+
+  useEffect(() => {
+    console.log('[AppContext] Starting device detection simulation...');
+    setStreamState('waiting_for_device');
+
+    deviceCheckRef.current = setTimeout(() => {
+      console.log('[AppContext] Device detected, ready to connect');
+      setHasActiveDevice(true);
+      setWearable(prev => ({ ...prev, connected: false }));
+    }, 3000);
+
+    return () => {
+      if (deviceCheckRef.current) {
+        clearTimeout(deviceCheckRef.current);
+      }
+    };
   }, []);
 
   const refreshAudioInputs = useCallback(async () => {
@@ -103,16 +137,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const selectAudioDevice = useCallback((deviceId: string) => {
     setSelectedAudioDeviceId(deviceId);
-    persist(deviceId, recordingSettings);
-  }, [persist, recordingSettings]);
+    persist(deviceId, recordingSettings, recordings);
+  }, [persist, recordingSettings, recordings]);
 
   const updateRecordingSettings = useCallback((settings: Partial<RecordingSettings>) => {
     setRecordingSettings(prev => {
       const updated = { ...prev, ...settings };
-      persist(selectedAudioDeviceId, updated);
+      persist(selectedAudioDeviceId, updated, recordings);
       return updated;
     });
-  }, [persist, selectedAudioDeviceId]);
+  }, [persist, selectedAudioDeviceId, recordings]);
 
   const registerStream = useMutation({
     mutationFn: async () => {
@@ -121,7 +155,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
     onSuccess: (result) => {
       setStreamRegistration(result);
-      setWearable((prev) => ({ ...prev, connected: true }));
     },
     onError: () => {
       setStreamRegistration({ status: 'error', error: 'Registration failed' });
@@ -130,6 +163,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const startStream = useCallback(async () => {
     console.log('[AppContext] Starting stream...');
+    setStreamState('connecting');
+
     const resMap: Record<string, 'low' | 'medium' | 'high'> = {
       '720p': 'medium',
       '1080p': 'high',
@@ -145,19 +180,23 @@ export const [AppProvider, useApp] = createContextHook(() => {
     const session = streamService.createSession(config);
     streamSessionRef.current = session;
 
-    const unsubState = session.onStateChange((state) => {
-      setStreamState(state);
+    session.onStateChange((state: StreamState) => {
+      console.log('[AppContext] Stream state changed:', state);
+      setStreamState(state as AppStreamState);
       if (state === 'streaming') {
-        setWearable((prev) => ({ ...prev, connected: true }));
+        setWearable(prev => ({ ...prev, connected: true }));
+      } else if (state === 'stopped' || state === 'error') {
+        setWearable(prev => ({ ...prev, connected: false }));
       }
     });
 
-    const unsubStatus = session.onStatus((status) => {
+    session.onStatus((status: StreamSessionStatus) => {
       setStreamStatus(status);
     });
 
     session.onError((error) => {
       console.error('[AppContext] Stream error:', error);
+      setStreamState('error');
     });
 
     await session.start();
@@ -171,6 +210,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
     setStreamState('idle');
     setStreamStatus(null);
+    setWearable(prev => ({ ...prev, connected: false }));
+
+    setTimeout(() => {
+      setStreamState('waiting_for_device');
+      setTimeout(() => {
+        setHasActiveDevice(true);
+      }, 1500);
+    }, 500);
   }, []);
 
   const startRecording = useCallback(() => {
@@ -210,6 +257,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
 
     const selectedDevice = audioDevices.find(d => d.id === selectedAudioDeviceId);
+    const isStreamActive = streamState === 'streaming';
     const newRecording: Recording = {
       id: `rec-${Date.now()}`,
       title: `Recording ${recordings.length + 1}`,
@@ -220,14 +268,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
       fps: recordingSettings.fps,
       fileSize: Math.round(recordingTimer * 1.3),
       audioSource: selectedDevice?.name ?? 'Unknown',
+      deviceType: isStreamActive ? 'rayban-meta' : 'phone-camera',
     };
 
-    setRecordings(prev => [newRecording, ...prev]);
+    const updated = [newRecording, ...recordings];
+    setRecordings(updated);
+    persist(selectedAudioDeviceId, recordingSettings, updated);
     setRecordingTimer(0);
-  }, [audioDevices, selectedAudioDeviceId, recordings.length, recordingTimer, recordingSettings, pulseAnim]);
+  }, [audioDevices, selectedAudioDeviceId, recordings, recordingTimer, recordingSettings, pulseAnim, streamState, persist]);
 
   const selectedAudioDevice = audioDevices.find(d => d.id === selectedAudioDeviceId) ?? audioDevices[0];
   const connectedDevices = audioDevices.filter(d => d.connected);
+
+  const raybanRecordings = recordings.filter(r => r.deviceType === 'rayban-meta');
+
+  const isStreaming = streamState === 'streaming';
+  const isConnecting = streamState === 'connecting' || streamState === 'starting';
+  const isWaitingForDevice = streamState === 'waiting_for_device' || streamState === 'idle';
+  const canStartStream = hasActiveDevice && !isStreaming && !isConnecting;
 
   return {
     wearable,
@@ -238,6 +296,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     selectAudioDevice,
     connectedDevices,
     recordings,
+    raybanRecordings,
     isRecording,
     recordingTimer,
     recordingSettings,
@@ -255,5 +314,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     isRegistering: registerStream.isPending,
     startStream,
     stopStream,
+    hasActiveDevice,
+    isStreaming,
+    isConnecting,
+    isWaitingForDevice,
+    canStartStream,
   };
 });
