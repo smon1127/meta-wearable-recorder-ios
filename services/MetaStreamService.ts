@@ -136,16 +136,17 @@ class MetaStreamSession {
     await this.simulateDelay(1500);
     if (this.cancelled) return;
 
-    this.setState('starting');
+    this.setState('waiting_for_device');
 
-    await this.simulateDelay(2000);
+    await this.simulateDelay(4000);
     if (this.cancelled) return;
 
-    console.log('[MetaStream] Stream started successfully');
-    this.startTime = Date.now();
-    this.setState('streaming');
-    this.startFrameEmission();
-    this.startStatusReporting();
+    console.log('[MetaStream] No Ray-Ban Meta glasses found after scanning');
+    this.emitError({
+      code: 'DEVICE_NOT_FOUND',
+      message: 'No Ray-Ban Meta glasses found. Make sure your glasses are powered on and nearby.',
+    });
+    this.setState('error');
   }
 
   async stop(): Promise<void> {
@@ -244,15 +245,10 @@ export interface RegistrationState {
   error?: string;
 }
 
-export type DeviceScanState = 'idle' | 'scanning' | 'found' | 'not_found';
-
 class MetaStreamService {
   private static instance: MetaStreamService;
   private registration: RegistrationState = { status: 'unregistered' };
   private currentSession: MetaStreamSession | null = null;
-  private deviceScanState: DeviceScanState = 'idle';
-  private scanInterval: ReturnType<typeof setInterval> | null = null;
-  private scanListeners: ((state: DeviceScanState) => void)[] = [];
 
   static getInstance(): MetaStreamService {
     if (!MetaStreamService.instance) {
@@ -277,56 +273,6 @@ class MetaStreamService {
     };
     console.log('[MetaStream] Registered with device:', this.registration.deviceId);
     return this.registration;
-  }
-
-  onDeviceScanChange(listener: (state: DeviceScanState) => void) {
-    this.scanListeners.push(listener);
-    return () => {
-      this.scanListeners = this.scanListeners.filter((l) => l !== listener);
-    };
-  }
-
-  private emitScanState(state: DeviceScanState) {
-    this.deviceScanState = state;
-    this.scanListeners.forEach((l) => l(state));
-  }
-
-  getDeviceScanState(): DeviceScanState {
-    return this.deviceScanState;
-  }
-
-  startDeviceScan(): void {
-    if (this.scanInterval) return;
-    console.log('[MetaStream] Starting device scan...');
-    this.emitScanState('scanning');
-
-    let scanAttempts = 0;
-    this.scanInterval = setInterval(() => {
-      scanAttempts++;
-      console.log(`[MetaStream] Scan attempt ${scanAttempts}...`);
-
-      if (scanAttempts >= 3 && this.registration.status === 'registered') {
-        console.log('[MetaStream] Device found after scan');
-        this.emitScanState('found');
-        this.stopDeviceScan();
-      } else if (scanAttempts >= 8) {
-        console.log('[MetaStream] Device not found after max attempts');
-        this.emitScanState('not_found');
-        this.stopDeviceScan();
-      }
-    }, 2000);
-  }
-
-  stopDeviceScan(): void {
-    if (this.scanInterval) {
-      clearInterval(this.scanInterval);
-      this.scanInterval = null;
-    }
-  }
-
-  resetScan(): void {
-    this.stopDeviceScan();
-    this.emitScanState('idle');
   }
 
   async checkPermission(type: 'camera' | 'microphone'): Promise<boolean> {

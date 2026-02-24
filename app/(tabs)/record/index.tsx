@@ -2,12 +2,11 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { Video, StopCircle, Mic, Settings, ChevronDown, Wifi, WifiOff, Activity, Zap, RefreshCw, Glasses, Link2 } from 'lucide-react-native';
+import { Video, StopCircle, Mic, Settings, ChevronDown, Wifi, WifiOff, Activity, Zap, RefreshCw, Glasses } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { useRouter } from 'expo-router';
 
 function formatTimer(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -25,7 +24,6 @@ function formatBitrate(kbps: number): string {
 export default function RecordScreen() {
   const insets = useSafeAreaInsets();
   const {
-    isPaired,
     isRecording,
     recordingTimer,
     startRecording,
@@ -44,10 +42,7 @@ export default function RecordScreen() {
     isWaitingForDevice,
     canStartStream,
     isError,
-    deviceScanState,
-    resetDeviceScan,
   } = useApp();
-  const router = useRouter();
 
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [cameraFacing, setCameraFacing] = useState<CameraType>('back');
@@ -135,8 +130,6 @@ export default function RecordScreen() {
 
   const showCamera = !isStreaming && permission?.granted && Platform.OS !== 'web';
   const showIdleState = !isStreaming && !isConnecting;
-  const deviceReady = isPaired && hasActiveDevice;
-  const isScanning = isPaired && deviceScanState === 'scanning';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -161,46 +154,17 @@ export default function RecordScreen() {
                 <RefreshCw size={20} color={Colors.white} />
               </Pressable>
 
-              {showIdleState && !isPaired && (
-                <View style={styles.waitingOverlay}>
-                  <View style={styles.waitingContent}>
-                    <Link2 size={32} color={Colors.textMuted} />
-                    <Text style={styles.waitingTitle}>Not Connected</Text>
-                    <Text style={styles.waitingSub}>Pair with Meta AI to stream</Text>
-                    <Pressable
-                      style={styles.pairBtn}
-                      onPress={() => router.push('/connect' as never)}
-                      testID="go-pair-btn"
-                    >
-                      <Text style={styles.pairBtnText}>Connect Glasses</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              )}
-
-              {showIdleState && isPaired && !hasActiveDevice && (
+              {showIdleState && !hasActiveDevice && (
                 <View style={styles.waitingOverlay}>
                   <Animated.View style={[styles.waitingContent, { opacity: waitingPulse }]}>
                     <Glasses size={32} color={Colors.warning} />
                     <Text style={styles.waitingTitle}>Waiting for Device</Text>
-                    <Text style={styles.waitingSub}>
-                      {isScanning ? 'Scanning for Ray-Ban Meta...' : 'No glasses found nearby'}
-                    </Text>
-                    {deviceScanState === 'not_found' && (
-                      <Pressable
-                        style={styles.retryScanBtn}
-                        onPress={resetDeviceScan}
-                        testID="retry-scan-btn"
-                      >
-                        <RefreshCw size={14} color={Colors.primary} />
-                        <Text style={styles.retryScanText}>Retry Scan</Text>
-                      </Pressable>
-                    )}
+                    <Text style={styles.waitingSub}>Searching for Ray-Ban Meta...</Text>
                   </Animated.View>
                 </View>
               )}
 
-              {showIdleState && deviceReady && (
+              {showIdleState && hasActiveDevice && (
                 <View style={styles.readyOverlay}>
                   <Animated.View style={{ transform: [{ scale: connectBtnScale }] }}>
                     <Pressable
@@ -326,39 +290,12 @@ export default function RecordScreen() {
             <View style={styles.cornerBL} />
             <View style={styles.cornerBR} />
 
-            {!isPaired ? (
-              <View style={styles.waitingOverlay}>
-                <View style={styles.waitingContent}>
-                  <Link2 size={32} color={Colors.textMuted} />
-                  <Text style={styles.waitingTitle}>Not Connected</Text>
-                  <Text style={styles.waitingSub}>Pair with Meta AI to stream</Text>
-                  <Pressable
-                    style={styles.pairBtn}
-                    onPress={() => router.push('/connect' as never)}
-                    testID="go-pair-btn-alt"
-                  >
-                    <Text style={styles.pairBtnText}>Connect Glasses</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : !hasActiveDevice ? (
+            {!hasActiveDevice ? (
               <View style={styles.waitingOverlay}>
                 <Animated.View style={[styles.waitingContent, { opacity: waitingPulse }]}>
                   <Glasses size={32} color={Colors.warning} />
                   <Text style={styles.waitingTitle}>Waiting for Device</Text>
-                  <Text style={styles.waitingSub}>
-                    {isScanning ? 'Scanning for Ray-Ban Meta...' : 'No glasses found nearby'}
-                  </Text>
-                  {deviceScanState === 'not_found' && (
-                    <Pressable
-                      style={styles.retryScanBtn}
-                      onPress={resetDeviceScan}
-                      testID="retry-scan-btn-alt"
-                    >
-                      <RefreshCw size={14} color={Colors.primary} />
-                      <Text style={styles.retryScanText}>Retry Scan</Text>
-                    </Pressable>
-                  )}
+                  <Text style={styles.waitingSub}>Searching for Ray-Ban Meta...</Text>
                 </Animated.View>
               </View>
             ) : isConnecting ? (
@@ -374,7 +311,7 @@ export default function RecordScreen() {
                   <Pressable
                     style={styles.startStreamBtn}
                     onPress={handleStreamToggle}
-                    testID="start-stream-btn-alt"
+                    testID="start-stream-btn"
                   >
                     <Glasses size={24} color={Colors.white} />
                     <Text style={styles.startStreamText}>Start Streaming</Text>
@@ -449,7 +386,7 @@ export default function RecordScreen() {
               <Text style={styles.timerDisplayText}>{formatTimer(recordingTimer)}</Text>
             ) : (
               <Text style={styles.timerDisplayLabel}>
-                {isStreaming ? 'Live' : isConnecting ? '...' : isError ? 'Error' : !isPaired ? 'Unpaired' : !hasActiveDevice ? 'Scanning' : 'Ready'}
+                {isStreaming ? 'Live' : isConnecting ? '...' : isError ? 'Error' : 'Ready'}
               </Text>
             )}
           </View>
@@ -1013,34 +950,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600' as const,
     fontVariant: ['tabular-nums'],
-  },
-  pairBtn: {
-    marginTop: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: '#2563EB',
-  },
-  pairBtnText: {
-    color: Colors.white,
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  retryScanBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: Colors.primaryGlow,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  retryScanText: {
-    color: Colors.primary,
-    fontSize: 13,
-    fontWeight: '600' as const,
   },
 });

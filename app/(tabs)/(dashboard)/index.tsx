@@ -1,18 +1,17 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Video, Glasses, ChevronRight, Wifi, WifiOff, Film, Link } from 'lucide-react-native';
+import { Video, Glasses, ChevronRight, Wifi, WifiOff, Film } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import RecordingCard from '@/components/RecordingCard';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {
-    isPaired,
     wearable,
     raybanRecordings,
     recordings,
@@ -24,13 +23,7 @@ export default function DashboardScreen() {
     streamState,
     selectedAudioDevice,
     isError,
-    isLoading,
-    deviceScanState,
   } = useApp();
-
-  if (!isLoading && !isPaired) {
-    return <Redirect href={'/connect' as never} />;
-  }
   const headerFade = useRef(new Animated.Value(0)).current;
   const quickActionSlide = useRef(new Animated.Value(40)).current;
 
@@ -52,10 +45,6 @@ export default function DashboardScreen() {
     ? 'Connecting...'
     : isError
     ? 'Failed'
-    : deviceScanState === 'found'
-    ? 'Device Found'
-    : deviceScanState === 'scanning'
-    ? 'Scanning...'
     : 'Disconnected';
 
   const connectionColor = isStreaming
@@ -64,10 +53,6 @@ export default function DashboardScreen() {
     ? Colors.warning
     : isError
     ? Colors.error
-    : deviceScanState === 'found'
-    ? Colors.success
-    : deviceScanState === 'scanning'
-    ? Colors.warning
     : Colors.textMuted;
 
   return (

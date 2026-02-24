@@ -12,7 +12,6 @@ import MetaStreamService, {
   type StreamSessionConfig,
   type MetaStreamSession,
   type RegistrationState,
-  type DeviceScanState,
 } from '@/services/MetaStreamService';
 
 export type AppStreamState =
@@ -34,7 +33,6 @@ interface PersistedState {
   selectedAudioDeviceId: string;
   recordingSettings: RecordingSettings;
   recordings: Recording[];
-  isPaired: boolean;
 }
 
 const STORAGE_KEY = 'meta-wearable-state';
@@ -56,8 +54,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const [isPaired, setIsPaired] = useState<boolean>(false);
-  const [deviceScanState, setDeviceScanState] = useState<DeviceScanState>('idle');
   const [streamState, setStreamState] = useState<AppStreamState>('idle');
   const [streamStatus, setStreamStatus] = useState<StreamSessionStatus | null>(null);
   const [streamRegistration, setStreamRegistration] = useState<RegistrationState>({ status: 'unregistered' });
@@ -81,54 +77,23 @@ export const [AppProvider, useApp] = createContextHook(() => {
       if (persistedQuery.data.recordings) {
         setRecordings(persistedQuery.data.recordings);
       }
-      if (persistedQuery.data.isPaired !== undefined) {
-        setIsPaired(persistedQuery.data.isPaired);
-      }
     }
   }, [persistedQuery.data]);
 
-  const persist = useCallback(async (deviceId: string, settings: RecordingSettings, recs?: Recording[], paired?: boolean) => {
+  const persist = useCallback(async (deviceId: string, settings: RecordingSettings, recs?: Recording[]) => {
     const state: PersistedState = {
       selectedAudioDeviceId: deviceId,
       recordingSettings: settings,
       recordings: recs ?? [],
-      isPaired: paired ?? false,
     };
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, []);
-
-  const setPaired = useCallback(async (paired: boolean) => {
-    console.log('[AppContext] Setting paired state:', paired);
-    setIsPaired(paired);
-    await persist(selectedAudioDeviceId, recordingSettings, recordings, paired);
-  }, [persist, selectedAudioDeviceId, recordingSettings, recordings]);
 
   useEffect(() => {
     console.log('[AppContext] Initialized — waiting for real device connection');
     setStreamState('idle');
     setHasActiveDevice(false);
   }, []);
-
-  useEffect(() => {
-    if (isPaired && deviceScanState === 'idle') {
-      console.log('[AppContext] Paired — starting device scan');
-      const unsub = streamService.onDeviceScanChange((state) => {
-        console.log('[AppContext] Device scan state:', state);
-        setDeviceScanState(state);
-        if (state === 'found') {
-          setHasActiveDevice(true);
-        } else if (state === 'not_found') {
-          setHasActiveDevice(false);
-        }
-      });
-      streamService.startDeviceScan();
-      return () => {
-        unsub();
-        streamService.stopDeviceScan();
-      };
-    }
-    return undefined;
-  }, [isPaired, streamService]);
 
   const refreshAudioInputs = useCallback(async () => {
     console.log('[AppContext] Refreshing audio inputs...');
@@ -195,16 +160,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const selectAudioDevice = useCallback((deviceId: string) => {
     setSelectedAudioDeviceId(deviceId);
-    persist(deviceId, recordingSettings, recordings, isPaired);
-  }, [persist, recordingSettings, recordings, isPaired]);
+    persist(deviceId, recordingSettings, recordings);
+  }, [persist, recordingSettings, recordings]);
 
   const updateRecordingSettings = useCallback((settings: Partial<RecordingSettings>) => {
     setRecordingSettings(prev => {
       const updated = { ...prev, ...settings };
-      persist(selectedAudioDeviceId, updated, recordings, isPaired);
+      persist(selectedAudioDeviceId, updated, recordings);
       return updated;
     });
-  }, [persist, selectedAudioDeviceId, recordings, isPaired]);
+  }, [persist, selectedAudioDeviceId, recordings]);
 
   const registerStream = useMutation({
     mutationFn: async () => {
@@ -220,10 +185,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   });
 
   const startStream = useCallback(async () => {
-    if (!isPaired) {
-      console.warn('[AppContext] Cannot start stream — not paired with Meta AI');
-      return;
-    }
     console.log('[AppContext] Starting stream...');
     setStreamState('connecting');
 
@@ -262,7 +223,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     });
 
     await session.start();
-  }, [recordingSettings, streamService, isPaired]);
+  }, [recordingSettings, streamService]);
 
   const stopStream = useCallback(async () => {
     console.log('[AppContext] Stopping stream...');
@@ -329,9 +290,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
     const updated = [newRecording, ...recordings];
     setRecordings(updated);
-    persist(selectedAudioDeviceId, recordingSettings, updated, isPaired);
+    persist(selectedAudioDeviceId, recordingSettings, updated);
     setRecordingTimer(0);
-  }, [audioDevices, selectedAudioDeviceId, recordings, recordingTimer, recordingSettings, pulseAnim, streamState, persist, isPaired]);
+  }, [audioDevices, selectedAudioDeviceId, recordings, recordingTimer, recordingSettings, pulseAnim, streamState, persist]);
 
   const selectedAudioDevice = audioDevices.find(d => d.id === selectedAudioDeviceId) ?? audioDevices[0];
   const connectedDevices = audioDevices.filter(d => d.connected);
@@ -342,11 +303,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const isConnecting = streamState === 'connecting' || streamState === 'starting' || streamState === 'waiting_for_device';
   const isWaitingForDevice = streamState === 'idle';
   const isError = streamState === 'error';
-  const canStartStream = isPaired && !isStreaming && !isConnecting;
+  const canStartStream = !isStreaming && !isConnecting;
 
   return {
-    isPaired,
-    setPaired,
     wearable,
     setWearable,
     audioDevices,
@@ -379,12 +338,5 @@ export const [AppProvider, useApp] = createContextHook(() => {
     isWaitingForDevice,
     isError,
     canStartStream,
-    deviceScanState,
-    startDeviceScan: () => streamService.startDeviceScan(),
-    resetDeviceScan: () => {
-      streamService.resetScan();
-      setDeviceScanState('idle');
-      setHasActiveDevice(false);
-    },
   };
 });
