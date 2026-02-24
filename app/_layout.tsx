@@ -19,6 +19,7 @@ function RootLayoutNav() {
         contentStyle: { backgroundColor: Colors.background },
       }}
     >
+      <Stack.Screen name="connect" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
