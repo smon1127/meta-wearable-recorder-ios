@@ -90,20 +90,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   useEffect(() => {
-    console.log('[AppContext] Starting device detection simulation...');
-    setStreamState('waiting_for_device');
-
-    deviceCheckRef.current = setTimeout(() => {
-      console.log('[AppContext] Device detected, ready to connect');
-      setHasActiveDevice(true);
-      setWearable(prev => ({ ...prev, connected: false }));
-    }, 3000);
-
-    return () => {
-      if (deviceCheckRef.current) {
-        clearTimeout(deviceCheckRef.current);
-      }
-    };
+    console.log('[AppContext] Initialized — waiting for real device connection');
+    setStreamState('idle');
+    setHasActiveDevice(false);
   }, []);
 
   const refreshAudioInputs = useCallback(async () => {
@@ -210,14 +199,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
     setStreamState('idle');
     setStreamStatus(null);
+    setHasActiveDevice(false);
     setWearable(prev => ({ ...prev, connected: false }));
-
-    setTimeout(() => {
-      setStreamState('waiting_for_device');
-      setTimeout(() => {
-        setHasActiveDevice(true);
-      }, 1500);
-    }, 500);
   }, []);
 
   const startRecording = useCallback(() => {
@@ -283,9 +266,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const raybanRecordings = recordings.filter(r => r.deviceType === 'rayban-meta');
 
   const isStreaming = streamState === 'streaming';
-  const isConnecting = streamState === 'connecting' || streamState === 'starting';
-  const isWaitingForDevice = streamState === 'waiting_for_device' || streamState === 'idle';
-  const canStartStream = hasActiveDevice && !isStreaming && !isConnecting;
+  const isConnecting = streamState === 'connecting' || streamState === 'starting' || streamState === 'waiting_for_device';
+  const isWaitingForDevice = streamState === 'idle';
+  const isError = streamState === 'error';
+  const canStartStream = !isStreaming && !isConnecting;
 
   return {
     wearable,
@@ -318,6 +302,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     isStreaming,
     isConnecting,
     isWaitingForDevice,
+    isError,
     canStartStream,
   };
 });

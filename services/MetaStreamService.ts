@@ -64,6 +64,7 @@ class MetaStreamSession {
   private frameCount = 0;
   private droppedFrames = 0;
   private startTime = 0;
+  private cancelled = false;
 
   constructor(config: StreamSessionConfig) {
     this.config = config;
@@ -127,26 +128,30 @@ class MetaStreamSession {
       return;
     }
 
+    this.cancelled = false;
     this.setState('connecting');
     this.frameCount = 0;
     this.droppedFrames = 0;
 
-    await this.simulateDelay(800);
+    await this.simulateDelay(1500);
+    if (this.cancelled) return;
+
     this.setState('waiting_for_device');
 
-    await this.simulateDelay(1200);
-    this.setState('starting');
+    await this.simulateDelay(4000);
+    if (this.cancelled) return;
 
-    await this.simulateDelay(600);
-    this.startTime = Date.now();
-    this.setState('streaming');
-
-    this.startFrameEmission();
-    this.startStatusReporting();
+    console.log('[MetaStream] No Ray-Ban Meta glasses found after scanning');
+    this.emitError({
+      code: 'DEVICE_NOT_FOUND',
+      message: 'No Ray-Ban Meta glasses found. Make sure your glasses are powered on and nearby.',
+    });
+    this.setState('error');
   }
 
   async stop(): Promise<void> {
     console.log('[MetaStream] Stopping session...');
+    this.cancelled = true;
     this.stopFrameEmission();
     this.stopStatusReporting();
     this.setState('stopped');

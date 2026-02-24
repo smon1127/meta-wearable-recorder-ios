@@ -41,6 +41,7 @@ export default function RecordScreen() {
     isConnecting,
     isWaitingForDevice,
     canStartStream,
+    isError,
   } = useApp();
 
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -385,7 +386,7 @@ export default function RecordScreen() {
               <Text style={styles.timerDisplayText}>{formatTimer(recordingTimer)}</Text>
             ) : (
               <Text style={styles.timerDisplayLabel}>
-                {isStreaming ? 'Live' : hasActiveDevice ? 'Ready' : '...'}
+                {isStreaming ? 'Live' : isConnecting ? '...' : isError ? 'Error' : 'Ready'}
               </Text>
             )}
           </View>
@@ -659,6 +660,39 @@ const styles = StyleSheet.create({
   connectingText: {
     color: Colors.primary,
     fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    zIndex: 8,
+    gap: 12,
+  },
+  errorTitle: {
+    color: Colors.error,
+    fontSize: 18,
+    fontWeight: '700' as const,
+  },
+  errorSub: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center' as const,
+    paddingHorizontal: 32,
+  },
+  retryBtn: {
+    marginTop: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 82, 82, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 82, 82, 0.3)',
+  },
+  retryBtnText: {
+    color: Colors.error,
+    fontSize: 14,
     fontWeight: '600' as const,
   },
   streamOverlay: {

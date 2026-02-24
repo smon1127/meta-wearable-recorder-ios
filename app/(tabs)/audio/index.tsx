@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Animated, Pressable, ActivityIndicator, PanResponder, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Mic, Volume2, Sliders, RefreshCw, Wifi } from 'lucide-react-native';
+import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -21,34 +22,145 @@ export default function AudioScreen() {
   const fadeIn = useRef(new Animated.Value(0)).current;
   const [gainLevel, setGainLevel] = useState<number>(75);
   const refreshSpin = useRef(new Animated.Value(0)).current;
-  const meterAnims = useRef(
-    Array.from({ length: 8 }, () => new Animated.Value(0.2))
-  ).current;
+  const [audioLevels, setAudioLevels] = useState<number[]>(Array(8).fill(0.08));
+
+  const trackWidthRef = useRef<number>(0);
+  const startGainRef = useRef<number>(0);
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, [fadeIn]);
 
   useEffect(() => {
-    const animations = meterAnims.map((anim) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, {
-            toValue: Math.random() * 0.6 + 0.3,
-            duration: 200 + Math.random() * 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: Math.random() * 0.3 + 0.1,
-            duration: 200 + Math.random() * 300,
-            useNativeDriver: true,
-          }),
-        ])
-      )
+    let mounted = true;
+    let cleanupFn: (() => void) | null = null;
+
+    const startMonitoring = async () => {
+      if (Platform.OS === 'web') {
+        try {
+          if (typeof navigator === 'undefined' || !navigator?.mediaDevices) {
+            console.log('[AudioMonitor] Web mediaDevices not available');
+            return;
+          }
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const ctx = new AudioContext();
+          const source = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 64;
+          source.connect(analyser);
+          const buffer = new Uint8Array(analyser.frequencyBinCount);
+
+          const interval = setInterval(() => {
+            if (!mounted) return;
+            analyser.getByteFrequencyData(buffer);
+            const levels = Array.from({ length: 8 }, (_, i) => {
+              const start = Math.floor((i / 8) * buffer.length);
+              const end = Math.max(start + 1, Math.floor(((i + 1) / 8) * buffer.length));
+              let sum = 0;
+              for (let j = start; j < end; j++) sum += buffer[j];
+              return Math.max(0.08, (sum / (end - start)) / 255);
+            });
+            setAudioLevels(levels);
+          }, 80);
+
+          cleanupFn = () => {
+            clearInterval(interval);
+            stream.getTracks().forEach(t => t.stop());
+            ctx.close().catch(() => {});
+          };
+          console.log('[AudioMonitor] Web monitoring started');
+        } catch (err) {
+          console.log('[AudioMonitor] Web monitoring failed:', err);
+        }
+      } else {
+        try {
+          const perm = await Audio.requestPermissionsAsync();
+          if (perm.status !== 'granted') {
+            console.log('[AudioMonitor] Permission denied');
+            return;
+          }
+
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+          });
+
+          const rec = new Audio.Recording();
+          await rec.prepareToRecordAsync({
+            ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+            isMeteringEnabled: true,
+          });
+          await rec.startAsync();
+
+          const interval = setInterval(async () => {
+            if (!mounted) return;
+            try {
+              const st = await rec.getStatusAsync();
+              if (st.isRecording && st.metering != null) {
+                const db = st.metering;
+                const norm = Math.max(0, Math.min(1, (db + 50) / 50));
+                const levels = Array.from({ length: 8 }, (_, i) => {
+                  const thresh = (i + 1) / 9;
+                  if (norm >= thresh) return Math.min(1, 0.35 + norm * 0.65);
+                  return 0.08;
+                });
+                setAudioLevels(levels);
+              }
+            } catch {}
+          }, 80);
+
+          cleanupFn = () => {
+            clearInterval(interval);
+            rec.stopAndUnloadAsync().catch(() => {});
+            Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => {});
+          };
+          console.log('[AudioMonitor] Native monitoring started');
+        } catch (err) {
+          console.log('[AudioMonitor] Native monitoring failed:', err);
+        }
+      }
+    };
+
+    startMonitoring();
+
+    return () => {
+      mounted = false;
+      cleanupFn?.();
+    };
+  }, [selectedAudioDeviceId]);
+
+  const gainPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: (evt) => {
+      const x = evt.nativeEvent.locationX;
+      const w = trackWidthRef.current;
+      if (w > 0) {
+        const val = Math.round(Math.max(0, Math.min(100, (x / w) * 100)));
+        setGainLevel(val);
+        startGainRef.current = val;
+        Haptics.selectionAsync();
+      }
+    },
+    onPanResponderMove: (_evt, gestureState) => {
+      const w = trackWidthRef.current;
+      if (w > 0) {
+        const delta = (gestureState.dx / w) * 100;
+        const val = Math.round(Math.max(0, Math.min(100, startGainRef.current + delta)));
+        setGainLevel(val);
+      }
+    },
+    onPanResponderRelease: () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    },
+  }), []);
+
+  const nearestPreset = useMemo(() => {
+    const presets = [25, 50, 75, 100];
+    return presets.reduce((prev, curr) =>
+      Math.abs(curr - gainLevel) < Math.abs(prev - gainLevel) ? curr : prev
     );
-    animations.forEach((a) => a.start());
-    return () => animations.forEach((a) => a.stop());
-  }, [meterAnims]);
+  }, [gainLevel]);
 
   const handleRefresh = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -131,13 +243,13 @@ export default function AudioScreen() {
             <Text style={styles.meterDevice}>{selectedDevice?.name ?? 'None'}</Text>
           </View>
           <View style={styles.meterBars}>
-            {meterAnims.map((anim, i) => (
-              <Animated.View
+            {audioLevels.map((level, i) => (
+              <View
                 key={i}
                 style={[
                   styles.meterBar,
                   {
-                    opacity: anim,
+                    opacity: Math.max(0.12, level),
                     backgroundColor: i < 5 ? Colors.success : i < 7 ? Colors.warning : Colors.error,
                   },
                 ]}
@@ -150,25 +262,31 @@ export default function AudioScreen() {
               <Text style={styles.gainLabel}>Gain</Text>
               <Text style={styles.gainValue}>{gainLevel}%</Text>
             </View>
-            <View style={styles.gainTrack}>
-              <View style={[styles.gainFill, { width: `${gainLevel}%` }]} />
-              <Pressable
+            <View
+              style={styles.gainSliderArea}
+              onLayout={(e) => { trackWidthRef.current = e.nativeEvent.layout.width; }}
+              {...gainPanResponder.panHandlers}
+            >
+              <View style={styles.gainTrack}>
+                <View style={[styles.gainFill, { width: `${gainLevel}%` }]} />
+              </View>
+              <View
                 style={[styles.gainKnob, { left: `${gainLevel}%` }]}
-                onPress={() => {}}
+                pointerEvents="none"
               />
             </View>
             <View style={styles.gainPresets}>
               {[25, 50, 75, 100].map((val) => (
                 <Pressable
                   key={val}
-                  style={[styles.presetBtn, gainLevel === val && styles.presetBtnActive]}
+                  style={[styles.presetBtn, nearestPreset === val && styles.presetBtnActive]}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setGainLevel(val);
                   }}
                   testID={`gain-${val}`}
                 >
-                  <Text style={[styles.presetText, gainLevel === val && styles.presetTextActive]}>
+                  <Text style={[styles.presetText, nearestPreset === val && styles.presetTextActive]}>
                     {val}%
                   </Text>
                 </Pressable>
@@ -334,11 +452,16 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     marginLeft: 'auto',
   },
+  gainSliderArea: {
+    height: 30,
+    justifyContent: 'center',
+    position: 'relative',
+  },
   gainTrack: {
     height: 6,
     backgroundColor: Colors.surfaceHighlight,
     borderRadius: 3,
-    position: 'relative',
+    overflow: 'hidden',
   },
   gainFill: {
     height: '100%',
@@ -347,7 +470,7 @@ const styles = StyleSheet.create({
   },
   gainKnob: {
     position: 'absolute',
-    top: -7,
+    top: 5,
     width: 20,
     height: 20,
     borderRadius: 10,

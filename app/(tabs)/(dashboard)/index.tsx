@@ -22,6 +22,7 @@ export default function DashboardScreen() {
     hasActiveDevice,
     streamState,
     selectedAudioDevice,
+    isError,
   } = useApp();
   const headerFade = useRef(new Animated.Value(0)).current;
   const quickActionSlide = useRef(new Animated.Value(40)).current;
@@ -42,18 +43,16 @@ export default function DashboardScreen() {
     ? 'Streaming'
     : isConnecting
     ? 'Connecting...'
-    : isWaitingForDevice && !hasActiveDevice
-    ? 'Searching...'
-    : hasActiveDevice
-    ? 'Device Found'
+    : isError
+    ? 'Failed'
     : 'Disconnected';
 
   const connectionColor = isStreaming
     ? Colors.success
     : isConnecting
     ? Colors.warning
-    : hasActiveDevice
-    ? Colors.primary
+    : isError
+    ? Colors.error
     : Colors.textMuted;
 
   return (
@@ -71,7 +70,7 @@ export default function DashboardScreen() {
             </Text>
           </View>
           <View style={[styles.statusChip, { borderColor: connectionColor }]}>
-            {isStreaming || (hasActiveDevice && !isWaitingForDevice) ? (
+            {isStreaming ? (
               <Wifi size={12} color={connectionColor} />
             ) : (
               <WifiOff size={12} color={connectionColor} />
@@ -89,7 +88,7 @@ export default function DashboardScreen() {
               <Text style={styles.deviceCardName}>{wearable.name}</Text>
               <Text style={styles.deviceCardModel}>{wearable.model}</Text>
             </View>
-            <View style={[styles.connDot, { backgroundColor: wearable.connected ? Colors.success : Colors.textMuted }]} />
+            <View style={[styles.connDot, { backgroundColor: isStreaming ? Colors.success : isConnecting ? Colors.warning : isError ? Colors.error : Colors.textMuted }]} />
           </View>
 
           <View style={styles.deviceCardStats}>
