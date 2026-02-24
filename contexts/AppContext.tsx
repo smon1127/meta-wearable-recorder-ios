@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Animated } from 'react-native';
+import { Animated, AppState, Platform } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -123,6 +123,40 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     refreshAudioInputs();
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices) {
+      const handler = () => {
+        console.log('[AppContext] Web devicechange event — refreshing audio inputs');
+        refreshAudioInputs();
+      };
+      navigator.mediaDevices.addEventListener('devicechange', handler);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', handler);
+      };
+    }
+
+    if (Platform.OS !== 'web') {
+      const subscription = AppState.addEventListener('change', (state) => {
+        if (state === 'active') {
+          console.log('[AppContext] App became active — refreshing audio inputs');
+          refreshAudioInputs();
+        }
+      });
+
+      const pollInterval = setInterval(() => {
+        console.log('[AppContext] Polling audio inputs for hot-plug detection');
+        refreshAudioInputs();
+      }, 3000);
+
+      return () => {
+        subscription.remove();
+        clearInterval(pollInterval);
+      };
+    }
+
+    return undefined;
+  }, [refreshAudioInputs]);
 
   const selectAudioDevice = useCallback((deviceId: string) => {
     setSelectedAudioDeviceId(deviceId);
