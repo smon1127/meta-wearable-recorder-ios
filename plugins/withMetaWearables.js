@@ -1,4 +1,4 @@
-const { withInfoPlist, withXcodeProject, withDangerousMod } = require('@expo/config-plugins');
+const { withInfoPlist, withXcodeProject, withDangerousMod, withAndroidManifest } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -30,12 +30,21 @@ function withMetaWearablesInfoPlist(config) {
       config.modResults.NSLocalNetworkUsageDescription ||
       'This app uses the local network to communicate with Meta wearable devices.';
 
+    config.modResults.NSPhotoLibraryUsageDescription =
+      config.modResults.NSPhotoLibraryUsageDescription ||
+      'This app needs access to your photo library to save recordings and captured media.';
+
+    config.modResults.NSPhotoLibraryAddUsageDescription =
+      config.modResults.NSPhotoLibraryAddUsageDescription ||
+      'This app needs permission to save photos and videos to your library.';
+
     if (!config.modResults.UIBackgroundModes) {
       config.modResults.UIBackgroundModes = [];
     }
     const bgModes = config.modResults.UIBackgroundModes;
     if (!bgModes.includes('bluetooth-peripheral')) bgModes.push('bluetooth-peripheral');
     if (!bgModes.includes('external-accessory')) bgModes.push('external-accessory');
+    if (!bgModes.includes('audio')) bgModes.push('audio');
 
     if (!config.modResults.UISupportedExternalAccessoryProtocols) {
       config.modResults.UISupportedExternalAccessoryProtocols = [];
@@ -456,8 +465,50 @@ RCT_EXTERN_METHOD(cleanup:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRe
   ]);
 }
 
+function withMetaWearablesAndroidPermissions(config) {
+  return withAndroidManifest(config, (config) => {
+    const manifest = config.modResults.manifest;
+
+    const permissions = [
+      'android.permission.CAMERA',
+      'android.permission.RECORD_AUDIO',
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_MEDIA_AUDIO',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+      'android.permission.BLUETOOTH',
+      'android.permission.BLUETOOTH_ADMIN',
+      'android.permission.BLUETOOTH_CONNECT',
+      'android.permission.BLUETOOTH_SCAN',
+      'android.permission.BLUETOOTH_ADVERTISE',
+      'android.permission.ACCESS_FINE_LOCATION',
+      'android.permission.ACCESS_COARSE_LOCATION',
+    ];
+
+    if (!manifest['uses-permission']) {
+      manifest['uses-permission'] = [];
+    }
+
+    const existingPerms = manifest['uses-permission'].map(
+      (p) => p.$?.['android:name']
+    );
+
+    permissions.forEach((perm) => {
+      if (!existingPerms.includes(perm)) {
+        manifest['uses-permission'].push({
+          $: { 'android:name': perm },
+        });
+      }
+    });
+
+    return config;
+  });
+}
+
 function withMetaWearables(config) {
   config = withMetaWearablesInfoPlist(config);
+  config = withMetaWearablesAndroidPermissions(config);
   config = withMetaWearablesSPM(config);
   config = withMetaWearablesNativeModule(config);
   return config;
